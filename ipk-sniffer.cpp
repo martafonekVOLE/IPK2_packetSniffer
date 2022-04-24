@@ -21,6 +21,7 @@
 #include <chrono>
 #include <ctime>
 #include <iomanip>
+#include <sstream>
 using namespace std;
 using namespace std::chrono;
 
@@ -46,35 +47,33 @@ using namespace std::chrono;
 
     void process_packet(u_char *, const struct pcap_pkthdr *, const u_char *);
     void listInterface();
-    void printICMP(const u_char * Buffer, int Size);
-    void printTCP(const u_char * Buffer, int Size, bool ipv6FLAG);
-    void printUDP(const u_char * Buffer, int Size);
     void printData(const u_char *payload, int len);
-    void print_hex_ascii_line(const u_char *payload, int len, int offset);
-    void printHex(const u_char *payload, int len);
-
+    void hexIt(const u_char *payload, int len, int offset);
     string timeIs();
 
 int main(int argc, char *argv[]){
-    //pcap things
 
     for(int i = 1; i < argc; i++){
 
-
         if(strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--interface") == 0){
             if(interfaceFLAG == true){
-                //chyba argumentu
+                //fault argument
                 exit(1);
             }
-            interface = (argv[i+1]); 
+            if(argc >= (i + 2)){
+                interface = (argv[i+1]); 
+            }
+            else{
+            }
 
-            if(argc > (i + 1)){
-                // volitelný parametr
+            if(argc >= (i + 2)){
+                // not required param
                 if(strchr(interface, '-')){
                     interfaceFLAG = false;
                 }
                 else{
                     interfaceFLAG = true;
+                    i++;
                 }
             }
             else{
@@ -85,11 +84,17 @@ int main(int argc, char *argv[]){
 
         else if(strcmp(argv[i], "-p") == 0){
             if(portFLAG == true){
-                //chyba argumentu
+                //fault argument
                 exit(1);
             }
-            portFLAG = true;
-            portno = atoi(argv[i + 1]);
+            if(int(argc) >= int(i + 2)){
+                portFLAG = true;    
+                portno = atoi(argv[i + 1]);
+                i++;
+            }
+            else{
+                exit(99);
+            }
         }
 
         else if(strcmp(argv[i], "-t") == 0 || (strcmp(argv[i], "--tcp") == 0)){
@@ -110,18 +115,29 @@ int main(int argc, char *argv[]){
 
         else if((strcmp(argv[i], "-n") == 0)){
             nFLAG = true;
-            n = atoi(argv[i + 1]);
+            if(argc >= (i + 2)){
+                n = atoi(argv[i + 1]);
+            }
+            else{
+                exit(99);
+            }
         }
 
         else{
-
+            if(strcmp(argv[i-1], "-i") == 0 ||strcmp(argv[i-1], "--interface") == 0 || strcmp(argv[i-1], "-p") == 0 || strcmp(argv[i-1], "-n") == 0){
+                //if(strcmp(argv[i-1], "-i") == 0 ||strcmp(argv[i-1], "--interface") == 0 ){ check if i is valid interface
+                //}
+            }
+            else{
+                exit(99);
+            }
         }
     }  
 
-    // Práce s argumenty
+    // Checking arguments
     if(interfaceFLAG == false || (interfaceFLAG == true && interface == NULL)){
         listInterface();
-        return 0;
+        exit(0);
     }
 
     if(icmpFLAG == false && arpFLAG == false && udpFLAG == false && tcpFLAG == false){
@@ -132,37 +148,25 @@ int main(int argc, char *argv[]){
         tcpFLAG = true;
     }
 
-    // TIMESTAMP
-    // time_t rawtime;
-    // struct tm * timeinfo;
-    // char finalTime [80];
-
-    // time (&rawtime);
-    // timeinfo = localtime (&rawtime);
-
-    // strftime (finalTime,80,"%Y-%m-%dT%H:%M:%S",timeinfo);
-    // puts (finalTime); 
-
 	bpf_u_int32 Mask;             
 	bpf_u_int32 Net;             
 
     char errbuf[PCAP_ERRBUF_SIZE];
     if(pcap_lookupnet(interface, &Net, &Mask, errbuf) == -1){
-        //TODO chyba
-        return(1);
+        exit(1);
     }
 
     pcap_t *snifferOpened = pcap_open_live(interface, BUFSIZ, 1, 1000, errbuf);
     if(snifferOpened == NULL){
-        return(1);
+        exit(1);
     }
 
 
     pcap_loop(snifferOpened, -1, process_packet, NULL);
-        //-1 nahradit Nkem????
+        //-1, because I have my own counter 
 
     pcap_close(snifferOpened);
-    return 0;
+    exit(0);
 }
 
 void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *buffer){
@@ -195,7 +199,7 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                     fprintf(stdout, "dest MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_dest[0] , eth->h_dest[1] , eth->h_dest[2] , eth->h_dest[3] , eth->h_dest[4] , eth->h_dest[5]);
                 
                     // frame length
-                    std::cout << "frame length: " << ntohs(iph->tot_len) <<" bytes\n";
+                    std::cout << "frame length: " << header->caplen <<" bytes\n";
                 
                     // IP adress
                     std::cout << "src IP: " << inet_ntoa(source.sin_addr) << "\n";
@@ -208,13 +212,15 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                     }
 
                     }
-                break;		
+                break;
+
             case 6:  //TCP Protocol
+
                 if(tcpFLAG == true){
                     auto *tcpheader = (tcphdr*)(buffer + ipHeaderLen + 14);
 
-
                     if(portFLAG == true){
+
                         if(portno == ntohs(tcpheader->dest) || portno == ntohs(tcpheader->source)){
                             std::cout << timeIs() << "\n";
 
@@ -224,7 +230,7 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                             fprintf(stdout, "dest MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_dest[0] , eth->h_dest[1] , eth->h_dest[2] , eth->h_dest[3] , eth->h_dest[4] , eth->h_dest[5]);
 
                             // frame length
-                            std::cout << "frame length: " << ntohs(iph->tot_len) <<" bytes\n";
+                            std::cout << "frame length: " << header->caplen <<" bytes\n";
                         
                             // IP adress
                             std::cout << "src IP: " << inet_ntoa(source.sin_addr) << "\n";
@@ -234,6 +240,12 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                             std::cout << "src port: " << ntohs(tcpheader->source) << "\n";
                             std::cout << "dst port: " << ntohs(tcpheader->dest) << "\n\n";
                             totalBytes++;
+                            if(header->caplen > 0){
+                                printData(buffer, header->caplen);
+                            }
+                        }
+                        else{
+
                         }
                         
                     }
@@ -246,7 +258,7 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                             fprintf(stdout, "dest MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_dest[0] , eth->h_dest[1] , eth->h_dest[2] , eth->h_dest[3] , eth->h_dest[4] , eth->h_dest[5]);
 
                             // frame length
-                            std::cout << "frame length: " << ntohs(iph->tot_len) <<" bytes\n";
+                            std::cout << "frame length: " << header->caplen <<" bytes\n";
                         
                             // IP adress
                             std::cout << "src IP: " << inet_ntoa(source.sin_addr) << "\n";
@@ -256,10 +268,11 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                             std::cout << "src port: " << ntohs(tcpheader->source) << "\n";
                             std::cout << "dst port: " << ntohs(tcpheader->dest) << "\n\n";
                             totalBytes++;
+                            if(header->caplen > 0){
+                                printData(buffer, header->caplen);
+                            }
                         }
-                        if(header->caplen > 0){
-                            printData(buffer, header->caplen);
-                        }
+
                 }
                 break;
             case 17: //UDP Protocol
@@ -277,7 +290,7 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                             fprintf(stdout, "dest MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_dest[0] , eth->h_dest[1] , eth->h_dest[2] , eth->h_dest[3] , eth->h_dest[4] , eth->h_dest[5]);
 
                             // frame length
-                            std::cout << "frame length: " << ntohs(iph->tot_len) <<" bytes\n";
+                            std::cout << "frame length: " << header->caplen <<" bytes\n";
                         
                             // IP adress
                             std::cout << "src IP: " << inet_ntoa(source.sin_addr) << "\n";
@@ -287,6 +300,9 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                             std::cout << "src port: " << ntohs(udpheader->source) << "\n";
                             std::cout << "dst port: " << ntohs(udpheader->dest) << "\n\n";
                             totalBytes++;
+                            if((header->caplen) > 0){
+                                printData(buffer, header->caplen);
+                            }
                         }
                     }
                     else{
@@ -298,7 +314,7 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                         fprintf(stdout, "dest MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_dest[0] , eth->h_dest[1] , eth->h_dest[2] , eth->h_dest[3] , eth->h_dest[4] , eth->h_dest[5]);
 
                         // frame length
-                        std::cout << "frame length: " << ntohs(iph->tot_len) <<" bytes\n";
+                        std::cout << "frame length: " << header->caplen <<" bytes\n";
                     
                         // IP adress
                         std::cout << "src IP: " << inet_ntoa(source.sin_addr) << "\n";
@@ -308,17 +324,15 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                         std::cout << "src port: " << ntohs(udpheader->source) << "\n";
                         std::cout << "dst port: " << ntohs(udpheader->dest) << "\n\n";
                         totalBytes++;
+                        if((header->caplen) > 0){
+                            printData(buffer, header->caplen);
+                        }
                     }
-
-                    if((header->caplen) > 0){
-                        printData(buffer, header->caplen);
-                    }
-
                 }
                 break;
             
             
-            default: //Other protocols TODO count them to totalBytes?
+            default: 
                 break;  
         }   
     }
@@ -326,7 +340,6 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
         auto *ipHeader = (ip6_hdr *)(buffer + 14);
         int ipHeaderLen = 40;
         sockaddr_in6 source, dest;
-        int sizePayload;
 
         source.sin6_addr = ipHeader->ip6_src;
         dest.sin6_addr = ipHeader->ip6_dst;
@@ -342,9 +355,8 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
             protocol = *(uint8_t*)(buffer + 40);
         }
 
-        sizePayload = ipHeader->ip6_ctlun.ip6_un1.ip6_un1_plen;
-
         switch(protocol){
+            //ICMPv6
             case 58:
                 if(icmpFLAG == true){
                      //MAC
@@ -356,7 +368,7 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                     cout << "src IP: " << srcstring << "\n";
                     cout << "dst IP: " << dststring << "\n";
 
-                    cout << "frame length: " << sizePayload+ipHeaderLen+14 << " bytes\n";
+                    cout << "frame length: " << header->caplen << " bytes\n";
                     totalBytes++;
 
                     if(header->caplen > 0){
@@ -364,7 +376,7 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                     }
                 }
                 break;
-
+            //TCP
             case 6: 
                 if(tcpFLAG == true){
                     auto *tcpheader = (tcphdr *)(buffer + 14 + ipHeaderLen);
@@ -380,11 +392,14 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                             cout << "src IP: " << srcstring << "\n";
                             cout << "dst IP: " << dststring << "\n";
 
-                            cout << "frame length: " << sizePayload+ipHeaderLen+14 << " bytes\n";
+                            cout << "frame length: " << header->caplen << " bytes\n";
 
                             std::cout << "src port: " << ntohs(tcpheader->source) << "\n";
                             std::cout << "dst port: " << ntohs(tcpheader->dest) << "\n\n";
                             totalBytes++;
+                            if(header->caplen > 0){
+                                printData(buffer, header->caplen);
+                            }
                         }
                     }
                     else{
@@ -397,19 +412,20 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                         cout << "src IP: " << srcstring << "\n";
                         cout << "dst IP: " << dststring << "\n";
 
-                        cout << "frame length: " << sizePayload+ipHeaderLen+14 << " bytes\n";
+                        cout << "frame length: " << header->caplen << " bytes\n";
 
                         std::cout << "src port: " << ntohs(tcpheader->source) << "\n";
                         std::cout << "dst port: " << ntohs(tcpheader->dest) << "\n\n";             
                         totalBytes++;
+                        if(header->caplen > 0){
+                            printData(buffer, header->caplen);
+                        }
                     }
-                    if(header->caplen > 0){
-                        printData(buffer, header->caplen);
-                    }
+
                 }
                 break;
-
-            case 17:
+            //UDP
+            case 17: 
                 if(udpFLAG == true){
                     auto *udpheader = (udphdr *)(buffer + 14 + ipHeaderLen);
 
@@ -424,11 +440,14 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                             cout << "src IP: " << srcstring << "\n";
                             cout << "dst IP: " << dststring << "\n";
 
-                            cout << "frame length: " << sizePayload+ipHeaderLen+14 << " bytes\n";
+                            cout << "frame length: " << header->caplen << " bytes\n";
 
                             std::cout << "src port: " << ntohs(udpheader->source) << "\n";
                             std::cout << "dst port: " << ntohs(udpheader->dest) << "\n\n";
                             totalBytes++;
+                            if((header->caplen) > 0){
+                                printData(buffer, header->caplen);
+                            }
                         }
                     }
                     else{
@@ -441,15 +460,16 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                         cout << "src IP: " << srcstring << "\n";
                         cout << "dst IP: " << dststring << "\n";
 
-                        cout << "frame length: " << sizePayload+ipHeaderLen+14 << " bytes\n";
+                        cout << "frame length: " << header->caplen << " bytes\n";
 
                         std::cout << "src port: " << ntohs(udpheader->source) << "\n";
                         std::cout << "dst port: " << ntohs(udpheader->dest) << "\n\n";
                         totalBytes++;
+                        if((header->caplen) > 0){
+                            printData(buffer, header->caplen);
+                        }
                     }
-                    if((header->caplen) > 0){
-                        printData(buffer, header->caplen);
-                    }
+
                 }
                 break;
 
@@ -483,6 +503,7 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                 }
                 k++;
             }
+            cout << endl << "frame length: " << header->caplen <<" bytes";
             cout << endl << endl;
             if(header->caplen > 0){
                 printData(buffer, header->caplen);
@@ -497,19 +518,19 @@ void printData(const u_char *payload, int len){
     int offset = 0;
     int lineRest = len;
     int thisLineLength;
+    // print solo
     if (len < 16){
-        //if line shorter, dont loop
-        print_hex_ascii_line(addr, len, offset);
+        hexIt(addr, len, offset);
     }else{
+        // loop 
         while(true){
-            //loop until all printed
             thisLineLength = 16 % lineRest;
-            print_hex_ascii_line(addr, thisLineLength, offset);
+            hexIt(addr, thisLineLength, offset);
             lineRest = lineRest - thisLineLength;
             addr = addr + thisLineLength;
             offset += 16;
             if(lineRest <=16){
-                print_hex_ascii_line(addr, lineRest, offset);
+                hexIt(addr, lineRest, offset);
                 break;
             }
         }
@@ -518,16 +539,16 @@ void printData(const u_char *payload, int len){
     cout << std::endl;
 }
 
-void print_hex_ascii_line(const u_char *payload, int len, int offset)
+void hexIt(const u_char *payload, int len, int offset)
 {
     int i;
     int gap;
     const u_char *paylo;
 
-    // offset on the beginning of the line
+    // print offset
     printf("0x%04x  ", offset);
     
-    // printing hexadecimal value
+    // if possible, print hex
     paylo = payload;
     for(i = 0; i < len; i++) {
         printf("%02x ", *paylo);
@@ -535,9 +556,11 @@ void print_hex_ascii_line(const u_char *payload, int len, int offset)
         if (i == 7)
             printf(" ");
     }
+    // aditional space
     if (len < 8)
         printf(" ");
 
+    // shorter line
     if (len < 16) {
         gap = 16 - len;
         for (i = 0; i < gap; i++) {
@@ -546,7 +569,7 @@ void print_hex_ascii_line(const u_char *payload, int len, int offset)
     }
     printf("   ");
     
-    //Printing ascii characters/dots
+    // ASCII/dot conversion
     paylo = payload;
     for(i = 0; i < len; i++) {
         if (isprint(*paylo))
@@ -557,18 +580,6 @@ void print_hex_ascii_line(const u_char *payload, int len, int offset)
     }
     cout << std::endl;
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 // Outprint available interface
 void listInterface(){
@@ -587,12 +598,43 @@ void listInterface(){
 
 string timeIs()
 {
-    //https://stackoverflow.com/questions/54325137/c-rfc3339-timestamp-with-milliseconds-using-stdchrono
-    const auto millis = time_point_cast<milliseconds>(system_clock::now()) - time_point_cast<seconds>(time_point_cast<milliseconds>(system_clock::now()));
-    const auto c_now = system_clock::to_time_t(time_point_cast<seconds>(time_point_cast<milliseconds>(system_clock::now())));
+ time_t now;
+  time(&now);
+  struct tm *p = localtime(&now);
+  char buf[100];
+  size_t len = strftime(buf, sizeof buf - 1, "%FT%T%z", p);
 
-    stringstream ss;
-    ss << put_time(gmtime(&c_now), "timestamp: %FT%T%z")
-       << '.' << setfill('0') << setw(3) << millis.count();
-    return ss.str();
+    const auto millis = time_point_cast<milliseconds>(system_clock::now()) - time_point_cast<seconds>(time_point_cast<milliseconds>(system_clock::now()));
+    string out;
+
+  if (len > 1) {
+    char minute[] = { buf[len-2], buf[len-1], '\0' };
+    sprintf(buf + len - 2, ":%s", minute);
+    char temp1[20];
+    char fuk[6];
+    int j = 0;
+    for (int i = 0; i < 26; i++){
+        if(i < 19){
+           temp1[i] = buf[i];  
+        }
+    }
+    for(int i = 19; i < 24; i++){
+        fuk[j] = buf[i];
+        j++;
+    }
+    string toOut;
+    toOut.append(fuk);
+    toOut.append("0");
+
+    long test = millis.count();
+    string num_str = to_string(test);
+
+    out.append("timestamp: ");
+    out.append(temp1);
+    out.append(".");
+    out.append(num_str);
+    out.append(toOut);
+
+  }
+  return(out);
 }
