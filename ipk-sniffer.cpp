@@ -24,8 +24,6 @@
 using namespace std;
 using namespace std::chrono;
 
-struct sockaddr_in source,dest;
-
 // Globals
     // Flags:
     bool interfaceFLAG = false;
@@ -41,7 +39,7 @@ struct sockaddr_in source,dest;
     //Important variables
     char *interface = NULL;
     int portno;
-    int n = 10;
+    int n = 1;
     int totalBytes = 0;
     std::string outFile = "";
     
@@ -52,6 +50,10 @@ struct sockaddr_in source,dest;
     void printICMP(const u_char * Buffer, int Size);
     void printTCP(const u_char * Buffer, int Size, bool ipv6FLAG);
     void printUDP(const u_char * Buffer, int Size);
+    void printData(const u_char *payload, int len);
+    void print_hex_ascii_line(const u_char *payload, int len, int offset);
+    void printHex(const u_char *payload, int len);
+
     string timeIs();
 
 int main(int argc, char *argv[]){
@@ -125,6 +127,10 @@ int main(int argc, char *argv[]){
 
     if(icmpFLAG == false && arpFLAG == false && udpFLAG == false && tcpFLAG == false){
         allFLAG = true;
+        icmpFLAG = true;
+        arpFLAG = true;
+        udpFLAG = true;
+        tcpFLAG = true;
     }
 
     // TIMESTAMP
@@ -154,7 +160,7 @@ int main(int argc, char *argv[]){
     }
 
 
-    pcap_loop(snifferOpened, n, process_packet, NULL);
+    pcap_loop(snifferOpened, -1, process_packet, NULL);
         //-1 nahradit Nkem????
 
     pcap_close(snifferOpened);
@@ -163,9 +169,15 @@ int main(int argc, char *argv[]){
 
 void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *buffer){
 
+    if(totalBytes == n){
+        exit(0);
+    }
+
     eptr = (ether_header*)buffer;
 
     if(ntohs(eptr->ether_type) == ETHERTYPE_IP){
+
+        sockaddr_in source,dest;
 
         auto *iph = (iphdr*)(buffer + 14);
         int ipHeaderLen = iph->ihl * 4;
@@ -183,57 +195,35 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                     const u_char *payload = (u_char*)(buffer + icmpHeaderSize);
                     int sizePayload = ntohs(iph->tot_len) - icmpHeaderSize;
 
-                    if(portFLAG == true){
-                        if(portno == ntohs(icmpheader->dest) || portno == ntohs(icmpheader->source)){
-                            std::cout << timeIs() << "\n";
+                    std::cout << timeIs() << "\n";
 
-                            // MAC adress
-                            struct ethhdr *eth = (struct ethhdr *)buffer;
-                            fprintf(stdout, "src MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_source[0] , eth->h_source[1] , eth->h_source[2] , eth->h_source[3] , eth->h_source[4] , eth->h_source[5]);
-                            fprintf(stdout, "dest MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_dest[0] , eth->h_dest[1] , eth->h_dest[2] , eth->h_dest[3] , eth->h_dest[4] , eth->h_dest[5]);
-                        
-                            // frame length
-                            std::cout << "frame length: " << ntohs(iph->tot_len) <<" bytes\n";
-                        
-                            // IP adress
-                            std::cout << "src IP: " << inet_ntoa(source.sin_addr) << "\n";
-                            std::cout << "dst IP: " << inet_ntoa(dest.sin_addr) << "\n";
-                        
-                            // port
-                            std::cout << "src port: " << ntohs(icmpheader->source) << "\n";
-                            std::cout << "dst port: " << ntohs(icmpheader->dest) << "\n\n";
-                            totalBytes++;
-                        }
-                    }
-                    else{
-                        std::cout << timeIs() << "\n";
+                    // MAC adress
+                    struct ethhdr *eth = (struct ethhdr *)buffer;
+                    fprintf(stdout, "src MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_source[0] , eth->h_source[1] , eth->h_source[2] , eth->h_source[3] , eth->h_source[4] , eth->h_source[5]);
+                    fprintf(stdout, "dest MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_dest[0] , eth->h_dest[1] , eth->h_dest[2] , eth->h_dest[3] , eth->h_dest[4] , eth->h_dest[5]);
+                
+                    // frame length
+                    std::cout << "frame length: " << ntohs(iph->tot_len) <<" bytes\n";
+                
+                    // IP adress
+                    std::cout << "src IP: " << inet_ntoa(source.sin_addr) << "\n";
+                    std::cout << "dst IP: " << inet_ntoa(dest.sin_addr) << "\n\n";
+                
+                    totalBytes++; 
 
-                        // MAC adress
-                        struct ethhdr *eth = (struct ethhdr *)buffer;
-                        fprintf(stdout, "src MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_source[0] , eth->h_source[1] , eth->h_source[2] , eth->h_source[3] , eth->h_source[4] , eth->h_source[5]);
-                        fprintf(stdout, "dest MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_dest[0] , eth->h_dest[1] , eth->h_dest[2] , eth->h_dest[3] , eth->h_dest[4] , eth->h_dest[5]);
-                    
-                        // frame length
-                        std::cout << "frame length: " << ntohs(iph->tot_len) <<" bytes\n";
-                    
-                        // IP adress
-                        std::cout << "src IP: " << inet_ntoa(source.sin_addr) << "\n";
-                        std::cout << "dst IP: " << inet_ntoa(dest.sin_addr) << "\n";
-                    
-                        // port
-                        std::cout << "src port: " << ntohs(icmpheader->source) << "\n";
-                        std::cout << "dst port: " << ntohs(icmpheader->dest) << "\n\n";
-                        totalBytes++; 
+                    if((header->caplen) > 0){
+                        printData(buffer, header->caplen);
                     }
+
                     }
                 break;		
             case 6:  //TCP Protocol
                 if(tcpFLAG == true){
                     auto *tcpheader = (tcphdr*)(buffer + ipHeaderLen + 14);
-                    int icmpHeaderSize = tcpheader->doff * 4 + ipHeaderLen + 14;
+                    int tcpHeaderSize = tcpheader->doff * 4 + ipHeaderLen + 14;
 
-                    const u_char *payload = (u_char*)(buffer + icmpHeaderSize);
-                    int sizePayload = ntohs(iph->tot_len) - icmpHeaderSize;
+                    const u_char *payload = (u_char*)(buffer + tcpHeaderSize);
+                    int sizePayload = ntohs(iph->tot_len) - tcpHeaderSize;
 
                     if(portFLAG == true){
                         if(portno == ntohs(tcpheader->dest) || portno == ntohs(tcpheader->source)){
@@ -256,7 +246,9 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                             std::cout << "dst port: " << ntohs(tcpheader->dest) << "\n\n";
                             totalBytes++;
                         }
-                        else{
+                        
+                    }
+                    else{
                             std::cout << timeIs() << "\n";
 
                             // MAC adress
@@ -276,27 +268,259 @@ void process_packet(u_char *args, const struct pcap_pkthdr *header, const u_char
                             std::cout << "dst port: " << ntohs(tcpheader->dest) << "\n\n";
                             totalBytes++;
                         }
-                    }
+
+                        printData(buffer, header->caplen);
+
                 }
                 break;
             case 17: //UDP Protocol
                 if(udpFLAG == true){
+
+                    auto *udpheader = (udphdr *) (buffer + ipHeaderLen + 14);
+                    int udpHeaderSize = sizeof(udpheader) + 14 +ipHeaderLen;
+
+                    const u_char *payload = (u_char*)(buffer + udpHeaderSize);
+                    int sizePayload = ntohs(iph->tot_len) - udpHeaderSize;
+
+
+                    if(portFLAG == true){
+                        if(portno == ntohs(udpheader->dest) || portno == ntohs(udpheader->source)){
+                            std::cout << timeIs() << "\n";
+
+                            // MAC adress
+                            struct ethhdr *eth = (struct ethhdr *)buffer;
+                            fprintf(stdout, "src MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_source[0] , eth->h_source[1] , eth->h_source[2] , eth->h_source[3] , eth->h_source[4] , eth->h_source[5]);
+                            fprintf(stdout, "dest MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_dest[0] , eth->h_dest[1] , eth->h_dest[2] , eth->h_dest[3] , eth->h_dest[4] , eth->h_dest[5]);
+
+                            // frame length
+                            std::cout << "frame length: " << ntohs(iph->tot_len) <<" bytes\n";
+                        
+                            // IP adress
+                            std::cout << "src IP: " << inet_ntoa(source.sin_addr) << "\n";
+                            std::cout << "dst IP: " << inet_ntoa(dest.sin_addr) << "\n";
+                        
+                            // port
+                            std::cout << "src port: " << ntohs(udpheader->source) << "\n";
+                            std::cout << "dst port: " << ntohs(udpheader->dest) << "\n\n";
+                            totalBytes++;
+                        }
+                    }
+                    else{
+                        std::cout << timeIs() << "\n";
+
+                        // MAC adress
+                        struct ethhdr *eth = (struct ethhdr *)buffer;
+                        fprintf(stdout, "src MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_source[0] , eth->h_source[1] , eth->h_source[2] , eth->h_source[3] , eth->h_source[4] , eth->h_source[5]);
+                        fprintf(stdout, "dest MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_dest[0] , eth->h_dest[1] , eth->h_dest[2] , eth->h_dest[3] , eth->h_dest[4] , eth->h_dest[5]);
+
+                        // frame length
+                        std::cout << "frame length: " << ntohs(iph->tot_len) <<" bytes\n";
                     
+                        // IP adress
+                        std::cout << "src IP: " << inet_ntoa(source.sin_addr) << "\n";
+                        std::cout << "dst IP: " << inet_ntoa(dest.sin_addr) << "\n";
+                    
+                        // port
+                        std::cout << "src port: " << ntohs(udpheader->source) << "\n";
+                        std::cout << "dst port: " << ntohs(udpheader->dest) << "\n\n";
+                        totalBytes++;
+                    }
+
+                    if((header->caplen) > 0){
+                        printData(buffer, header->caplen);
+                    }
+
                 }
-                totalBytes++;
                 break;
             
             
             default: //Other protocols TODO count them to totalBytes?
                 if(allFLAG == true){
-                    totalBytes++;
                 }
                 break;  
         }   
     }
+    else if(ntohs(eptr->ether_type) == ETHERTYPE_IPV6){
+        auto *ipHeader = (ip6_hdr *)(buffer + 14);
+        int ipHeaderLen = 40;
+        sockaddr_in6 source, dest;
+        int sizePayload;
+        const u_char *payload;
+
+        source.sin6_addr = ipHeader->ip6_src;
+        dest.sin6_addr = ipHeader->ip6_dst;
+
+        char srcstring[INET6_ADDRSTRLEN];
+        char dststring[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, &source.sin6_addr, srcstring, INET6_ADDRSTRLEN);
+        inet_ntop(AF_INET6, &dest.sin6_addr, dststring, INET6_ADDRSTRLEN);
+
+        uint8_t protocol = ipHeader->ip6_ctlun.ip6_un1.ip6_un1_nxt;
+        if (protocol == 0){
+            ipHeaderLen = 48;
+            protocol = *(uint8_t*)(buffer + 40);
+        }
+
+        sizePayload = ipHeader->ip6_ctlun.ip6_un1.ip6_un1_plen;
+
+        switch(protocol){
+            case 58:
+                if(icmpFLAG == true){
+                    auto *icmpheader = (tcphdr*)(buffer + 14 + ipHeaderLen);
+                    int icmpHeaderSize = sizeof(icmpheader) + 14 + ipHeaderLen;
+
+                    //sets offset for payload
+                    payload = (u_char*)(buffer + icmpHeaderSize);
+
+                    //print time and data about packet and headervalue of packet
+
+                    //MAC
+                    struct ethhdr *eth = (struct ethhdr *)buffer;
+                    fprintf(stdout, "src MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_source[0] , eth->h_source[1] , eth->h_source[2] , eth->h_source[3] , eth->h_source[4] , eth->h_source[5]);
+                    fprintf(stdout, "dest MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_dest[0] , eth->h_dest[1] , eth->h_dest[2] , eth->h_dest[3] , eth->h_dest[4] , eth->h_dest[5]);
+
+                    cout << timeIs() << "\n";
+                    cout << "src IP: " << srcstring << "\n";
+                    cout << "dst IP: " << dststring << "\n";
+
+                    cout << "frame length: " << sizePayload+ipHeaderLen+14 << " bytes\n";
+                    printData(buffer, header->caplen);
+                    totalBytes++;
+                }
+            case 6: 
+                if(tcpFLAG == true){
+                    auto *tcpheader = (tcphdr *)(buffer + 14 + ipHeaderLen);
+                    int tcpHeaderSize = sizeof(tcpheader) + 14 + ipHeaderLen;
+
+                    if(portFLAG == true){
+                        if(portno == ntohs(tcpheader->dest) || portno == ntohs(tcpheader->source)){
+                            //MAC
+                            struct ethhdr *eth = (struct ethhdr *)buffer;
+                            fprintf(stdout, "src MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_source[0] , eth->h_source[1] , eth->h_source[2] , eth->h_source[3] , eth->h_source[4] , eth->h_source[5]);
+                            fprintf(stdout, "dest MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_dest[0] , eth->h_dest[1] , eth->h_dest[2] , eth->h_dest[3] , eth->h_dest[4] , eth->h_dest[5]);
+
+                            cout << timeIs() << "\n";
+                            cout << "src IP: " << srcstring << "\n";
+                            cout << "dst IP: " << dststring << "\n";
+
+                            cout << "frame length: " << sizePayload+ipHeaderLen+14 << " bytes\n";
+
+                            std::cout << "src port: " << ntohs(tcpheader->source) << "\n";
+                            std::cout << "dst port: " << ntohs(tcpheader->dest) << "\n\n";
+                        totalBytes++;
+                        }
+                    }
+                    else{
+                        //MAC
+                        struct ethhdr *eth = (struct ethhdr *)buffer;
+                        fprintf(stdout, "src MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_source[0] , eth->h_source[1] , eth->h_source[2] , eth->h_source[3] , eth->h_source[4] , eth->h_source[5]);
+                        fprintf(stdout, "dest MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_dest[0] , eth->h_dest[1] , eth->h_dest[2] , eth->h_dest[3] , eth->h_dest[4] , eth->h_dest[5]);
+
+                        cout << timeIs() << "\n";
+                        cout << "src IP: " << srcstring << "\n";
+                        cout << "dst IP: " << dststring << "\n";
+
+                        cout << "frame length: " << sizePayload+ipHeaderLen+14 << " bytes\n";
+
+                        std::cout << "src port: " << ntohs(tcpheader->source) << "\n";
+                        std::cout << "dst port: " << ntohs(tcpheader->dest) << "\n\n";             
+                        totalBytes++;
+                    }
+
+                    if((header->caplen) > 0){
+                        printData(buffer, header->caplen);
+                    }
+                }
+        }
+
+    }
 
     
 }
+
+
+
+
+
+
+
+
+
+void printData(const u_char *payload, int len){
+    const u_char *addr = payload;
+    int offset = 0;
+    int lineRest = len;
+    int thisLineLength;
+    if (len < 16){
+        //if line shorter, dont loop
+        print_hex_ascii_line(addr, len, offset);
+    }else{
+        while(true){
+            //loop until all printed
+            thisLineLength = 16 % lineRest;
+            print_hex_ascii_line(addr, thisLineLength, offset);
+            lineRest = lineRest - thisLineLength;
+            addr = addr + thisLineLength;
+            offset += 16;
+            if(lineRest <=16){
+                print_hex_ascii_line(addr, lineRest, offset);
+                break;
+            }
+        }
+    }
+
+    cout << std::endl;
+}
+
+void print_hex_ascii_line(const u_char *payload, int len, int offset)
+{
+    int i;
+    int gap;
+    const u_char *paylo;
+
+    // offset on the beginning of the line
+    printf("0x%04x  ", offset);
+    
+    // printing hexadecimal value
+    paylo = payload;
+    for(i = 0; i < len; i++) {
+        printf("%02x ", *paylo);
+        paylo++;
+        if (i == 7)
+            printf(" ");
+    }
+    if (len < 8)
+        printf(" ");
+
+    if (len < 16) {
+        gap = 16 - len;
+        for (i = 0; i < gap; i++) {
+            printf("   ");
+        }
+    }
+    printf("   ");
+    
+    //Printing ascii characters/dots
+    paylo = payload;
+    for(i = 0; i < len; i++) {
+        if (isprint(*paylo))
+            printf("%c", *paylo);
+        else
+            printf(".");
+        paylo++;
+    }
+    cout << std::endl;
+}
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -315,39 +539,6 @@ void listInterface(){
     }
 } 
 
-void packetHead(const u_char *Buffer, int Size){
-	struct ethhdr *eth = (struct ethhdr *)Buffer;
-    
-    fprintf(stdout, "src MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_source[0] , eth->h_source[1] , eth->h_source[2] , eth->h_source[3] , eth->h_source[4] , eth->h_source[5]);
-    fprintf(stdout, "dest MAC: %.2X-%.2X-%.2X-%.2X-%.2X-%.2X \n", eth->h_dest[0] , eth->h_dest[1] , eth->h_dest[2] , eth->h_dest[3] , eth->h_dest[4] , eth->h_dest[5]);
-}
-
-void ipHead(const u_char * Buffer, int Size){
-
-    unsigned short iphdrlen;
-		
-	struct iphdr *iph = (struct iphdr *)(Buffer  + sizeof(struct ethhdr) );
-	iphdrlen =iph->ihl*4;
-	
-	memset(&source, 0, sizeof(source));
-	source.sin_addr.s_addr = iph->saddr;
-	
-	memset(&dest, 0, sizeof(dest));
-	dest.sin_addr.s_addr = iph->daddr;
-
-	fprintf(stdout, "src IP: %s\n" , inet_ntoa(source.sin_addr) );
-	fprintf(stdout, "dst IP: %s\n" , inet_ntoa(dest.sin_addr) );
-}
-
-// Packet processing
-
-
-
-
-void printUDP(const u_char * Buffer, int Size){
-    printf("UDP");
-}
-
 string timeIs()
 {
     //https://stackoverflow.com/questions/54325137/c-rfc3339-timestamp-with-milliseconds-using-stdchrono
@@ -355,7 +546,7 @@ string timeIs()
     const auto c_now = system_clock::to_time_t(time_point_cast<seconds>(time_point_cast<milliseconds>(system_clock::now())));
 
     stringstream ss;
-    ss << put_time(gmtime(&c_now), "%FT%T")
-       << '.' << setfill('0') << setw(3) << millis.count() << 'Z';
+    ss << put_time(gmtime(&c_now), "timestamp: %FT%T")
+       << '.' << setfill('0') << setw(3) << millis.count() << "+01:00";
     return ss.str();
 }
