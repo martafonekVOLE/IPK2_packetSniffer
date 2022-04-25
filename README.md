@@ -1,16 +1,17 @@
-**IPK projekt 2**
-*Varianta ZETTA - Sniffer packetů*
-*author: Martin Pech (xpechm00)*
+# IPK projekt 2 - *Varianta ZETTA - Sniffer packetů*
+
+## *author: Martin Pech (xpechm00)*
 
 
 Popis programu:
+=
 
 Sniffer packetů - jedná se o program, který sleduje provoz na síti. 
 Analyzuje a filtruje packety podle vstupních argumentů (více v manual.pdf).
 
 
 Přeložení projektu:
-
+=
 Projekt je možné přeložit pomocí nástroje *makefile*.
 Příkaz: make
 
@@ -21,7 +22,7 @@ make run - rozběhne sniffer s argumentem *-i*
 
 
 Spuštění projektu:
-
+=
 Projekt je možné spustit přes *makefile* s cílem *run*
 make run -> vykoná ./ipk-sniffer -i
 
@@ -35,7 +36,7 @@ Další příklady spuštění:
 
 
 Seznam odevzdaných souborů:
-
+=
 1. README.md
 2. ipk-sniffer.cpp
 3. makefile
